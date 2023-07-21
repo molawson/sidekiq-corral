@@ -5,3 +5,4 @@ require "sidekiq/corral"
 
 require "minitest/autorun"
 require "minitest/color"
+require "sidekiq/testing"

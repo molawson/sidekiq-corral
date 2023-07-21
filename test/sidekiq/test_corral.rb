@@ -4,8 +4,49 @@ require "test_helper"
 
 module Sidekiq
   class TestCorral < Minitest::Test
-    class DummyWorker
-      def perform(one_id, another_id, message)
+    def self.uninstall
+      Sidekiq.configure_client do |config|
+        config.client_middleware { |chain| chain.remove(Sidekiq::Corral::Client) }
+      end
+
+      Sidekiq.configure_server do |config|
+        config.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
+        config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client) }
+      end
+    end
+
+    def self.reinstall(exempt_queues = [])
+      uninstall
+      Corral.install(exempt_queues)
+    end
+
+    class DummyJob
+      include Sidekiq::Job
+
+      sidekiq_options queue: :low
+
+      def perform
+        DummySubJob.perform_async
+        DummySpecialJob.perform_async
+      end
+    end
+
+    class DummySubJob
+      include Sidekiq::Job
+
+      sidekiq_options queue: :default
+
+      def perform
+      end
+    end
+
+    class DummySpecialJob
+      include Sidekiq::Job
+
+      sidekiq_options queue: :snowflake
+
+      def perform
+        DummySubJob.perform_async
       end
     end
 
@@ -20,11 +61,8 @@ module Sidekiq
     def test_current
       assert_nil(Corral.current)
       Corral.current = "my_corral"
-      assert_equal("my_corral", Corral.current)
-    end
 
-    def test_install
-      Corral.install
+      assert_equal("my_corral", Corral.current)
     end
 
     def test_confine_changes_corral_in_block
@@ -35,6 +73,7 @@ module Sidekiq
 
     def test_confine_resets_to_original_value
       Corral.current = "outer_corral"
+
       assert_equal("outer_corral", Corral.current)
       Corral.confine("inner_corral") { assert_equal("inner_corral", Corral.current) }
       assert_equal("outer_corral", Corral.current)
@@ -42,6 +81,7 @@ module Sidekiq
 
     def test_confine_resets_value_on_error
       Corral.current = "outer_corral"
+
       assert_equal("outer_corral", Corral.current)
       assert_raises(StandardError) do
         Corral.confine("inner_corral") do
@@ -49,111 +89,174 @@ module Sidekiq
           raise(StandardError, "job failure")
         end
       end
+
       assert_equal("outer_corral", Corral.current)
     end
 
     class ClientTest < Minitest::Test
       def setup
-        @worker_class = DummyWorker
-        @job = { "args" => [1, 2, "buckle my shoe"], "queue" => "low" }
-        @redis_pool = "fake_redis_pool"
+        Corral.install
       end
 
       def teardown
+        Sidekiq::Job.clear_all
+        TestCorral.uninstall
         Corral.current = nil
       end
 
       def test_updating_queue_and_job_corral_with_current_corral
-        assert_nil(@job["corral"])
         Corral.current = "critical"
-        Sidekiq::Corral::Client
-          .new
-          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
-        assert_equal("critical", @job["corral"])
-        assert_equal("critical", @job["queue"])
+
+        assert_equal(0, DummyJob.jobs.size)
+        DummyJob.perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        job = DummyJob.jobs.first
+
+        assert_equal("critical", job["corral"])
+        assert_equal("critical", job["queue"])
       end
 
       def test_updating_queue_with_corral_in_job_payload
-        @job["corral"] = "critical"
         assert_nil(Corral.current)
-        Sidekiq::Corral::Client
-          .new
-          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
-        assert_equal("critical", @job["queue"])
+
+        assert_equal(0, DummyJob.jobs.size)
+        DummyJob.set(corral: :critical).perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        job = DummyJob.jobs.first
+
+        assert_equal("critical", job["corral"])
+        assert_equal("critical", job["queue"])
       end
 
       def test_no_corral
-        assert_nil(Corral.current)
-        Sidekiq::Corral::Client
-          .new
-          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
-        assert_nil(@job["corral"])
-        assert_equal("low", @job["queue"])
+        assert_equal(0, DummyJob.jobs.size)
+        DummyJob.perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        job = DummyJob.jobs.first
+
+        assert_nil(job["corral"])
+        assert_equal("low", job["queue"])
+      end
+
+      def test_explicit_nil_corral
+        assert_equal(0, DummyJob.jobs.size)
+        DummyJob.set(corral: nil).perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        job = DummyJob.jobs.first
+
+        assert_nil(job["corral"])
+        assert_equal("low", job["queue"])
       end
 
       def test_exempt_queue
-        exempt_queue = "special_queue"
+        exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
+        TestCorral.reinstall(exempt_queue)
 
-        assert_nil(@job["corral"])
+        DummySpecialJob.set(corral: :critical).perform_async
 
-        @job["corral"] = "critical"
-        @job["queue"] = exempt_queue
+        assert_equal(1, DummySpecialJob.jobs.size)
+        job = DummySpecialJob.jobs.first
 
-        Sidekiq::Corral::Client
-          .new(exempt_queue)
-          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
-
-        assert_equal("critical", @job["corral"])
-        assert_equal(exempt_queue, @job["queue"])
+        assert_equal("critical", job["corral"])
+        assert_equal(exempt_queue, job["queue"])
       end
 
       def test_multiple_exempt_queues
-        exempt_queue = "special_queue"
+        exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
+        TestCorral.reinstall(["extra_special", exempt_queue])
 
-        assert_nil(@job["corral"])
+        DummySpecialJob.set(corral: :critical).perform_async
 
-        @job["corral"] = "critical"
-        @job["queue"] = exempt_queue
+        assert_equal(1, DummySpecialJob.jobs.size)
+        job = DummySpecialJob.jobs.first
 
-        Sidekiq::Corral::Client
-          .new(["another_special_queue", exempt_queue])
-          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
-
-        assert_equal("critical", @job["corral"])
-        assert_equal(exempt_queue, @job["queue"])
+        assert_equal("critical", job["corral"])
+        assert_equal(exempt_queue, job["queue"])
       end
     end
 
     class ServerTest < Minitest::Test
       def setup
-        @worker_class = DummyWorker
-        @job = { "args" => [1, 2, "buckle my shoe"], "queue" => "critical", "corral" => "critical" }
+        Corral.install
+        Sidekiq::Testing.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
       end
 
-      def test_setting_current_corral_during_execution
-        Sidekiq::Corral::Server
-          .new
-          .call(@worker_class, @job, @job["queue"]) { assert_equal(@job["corral"], Corral.current) }
-        assert_nil(Corral.current)
+      def teardown
+        Sidekiq::Job.clear_all
+        TestCorral.uninstall
+        Corral.current = nil
       end
 
-      def test_clearing_current_corral_on_error
-        assert_raises(StandardError) do
-          Sidekiq::Corral::Server
-            .new
-            .call(@worker_class, @job, @job["queue"]) do
-              assert_equal(@job["corral"], Corral.current)
-              fail(StandardError, "job failure")
-            end
-        end
-        assert_nil(Corral.current)
+      def test_passing_corral_to_sub_job
+        DummyJob.set(corral: :critical).perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        DummyJob.drain
+
+        assert_equal(1, DummySubJob.jobs.size)
+        sub_job = DummySubJob.jobs.first
+
+        assert_equal("critical", sub_job["queue"])
+        assert_equal("critical", sub_job["corral"])
+      end
+
+      def test_passing_corral_through_exempt_queue_job
+        exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
+        TestCorral.reinstall(exempt_queue)
+
+        DummyJob.set(corral: :critical).perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        DummyJob.drain
+
+        assert_equal(1, DummySubJob.jobs.size)
+        DummySubJob.clear
+
+        assert_equal(1, DummySpecialJob.jobs.size)
+        special_job = DummySpecialJob.jobs.first
+
+        assert_equal(exempt_queue, special_job["queue"])
+        assert_equal("critical", special_job["corral"])
+        DummySpecialJob.drain
+
+        assert_equal(1, DummySubJob.jobs.size)
+        special_sub_job = DummySubJob.jobs.first
+
+        assert_equal("critical", special_sub_job["queue"])
+        assert_equal("critical", special_sub_job["corral"])
       end
 
       def test_no_corral
-        @job.delete("corral")
-        Sidekiq::Corral::Server
-          .new
-          .call(@worker_class, @job, @job["queue"]) { assert_nil(Corral.current) }
+        DummyJob.perform_async
+
+        assert_equal(1, DummyJob.jobs.size)
+        job = DummyJob.jobs.first
+
+        assert_equal(DummyJob.get_sidekiq_options["queue"].to_s, job["queue"])
+
+        DummyJob.drain
+
+        assert_equal(1, DummySpecialJob.jobs.size)
+        special_job = DummySpecialJob.jobs.first
+
+        assert_equal(DummySpecialJob.get_sidekiq_options["queue"].to_s, special_job["queue"])
+
+        assert_equal(1, DummySubJob.jobs.size)
+        sub_job = DummySubJob.jobs.first
+
+        assert_equal(DummySubJob.get_sidekiq_options["queue"].to_s, sub_job["queue"])
+
+        DummySubJob.drain
+        DummySpecialJob.drain
+
+        assert_equal(1, DummySubJob.jobs.size)
+        special_sub_job = DummySubJob.jobs.first
+
+        assert_equal(DummySubJob.get_sidekiq_options["queue"].to_s, special_sub_job["queue"])
       end
     end
   end
