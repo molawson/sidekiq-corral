@@ -1,8 +1,15 @@
+require:
+  - rubocop-minitest
+  - rubocop-rake
+
 inherit_gem:
   syntax_tree: config/rubocop.yml
 
 AllCops:
   TargetRubyVersion: 2.6
+
+AllCops:
+  NewCops: enable
 
 # Match print_width option in .streerc
 Layout/LineLength:
