@@ -1,55 +1,11 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require_relative "../support/middleware_setup"
+require_relative "../support/dummy_jobs"
 
 module Sidekiq
   class TestCorral < Minitest::Test
-    def self.uninstall
-      Sidekiq.configure_client do |config|
-        config.client_middleware { |chain| chain.remove(Sidekiq::Corral::Client) }
-      end
-
-      Sidekiq.configure_server do |config|
-        config.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
-        config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client) }
-      end
-    end
-
-    def self.reinstall(exempt_queues = [])
-      uninstall
-      Corral.install(exempt_queues)
-    end
-
-    class DummyJob
-      include Sidekiq::Job
-
-      sidekiq_options queue: :low
-
-      def perform
-        DummySubJob.perform_async
-        DummySpecialJob.perform_async
-      end
-    end
-
-    class DummySubJob
-      include Sidekiq::Job
-
-      sidekiq_options queue: :default
-
-      def perform
-      end
-    end
-
-    class DummySpecialJob
-      include Sidekiq::Job
-
-      sidekiq_options queue: :snowflake
-
-      def perform
-        DummySubJob.perform_async
-      end
-    end
-
     def teardown
       Corral.current = nil
     end
@@ -94,13 +50,15 @@ module Sidekiq
     end
 
     class ClientTest < Minitest::Test
+      include MiddlewareSetup
+
       def setup
         Corral.install
       end
 
       def teardown
         Sidekiq::Job.clear_all
-        TestCorral.uninstall
+        uninstall_middleware
         Corral.current = nil
       end
 
@@ -154,7 +112,7 @@ module Sidekiq
 
       def test_exempt_queue
         exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
-        TestCorral.reinstall(exempt_queue)
+        reinstall_middleware(exempt_queue)
 
         DummySpecialJob.set(corral: :critical).perform_async
 
@@ -167,7 +125,7 @@ module Sidekiq
 
       def test_multiple_exempt_queues
         exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
-        TestCorral.reinstall(["extra_special", exempt_queue])
+        reinstall_middleware(["extra_special", exempt_queue])
 
         DummySpecialJob.set(corral: :critical).perform_async
 
@@ -180,6 +138,8 @@ module Sidekiq
     end
 
     class ServerTest < Minitest::Test
+      include MiddlewareSetup
+
       def setup
         Corral.install
         Sidekiq::Testing.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
@@ -187,7 +147,7 @@ module Sidekiq
 
       def teardown
         Sidekiq::Job.clear_all
-        TestCorral.uninstall
+        uninstall_middleware
         Corral.current = nil
       end
 
@@ -206,7 +166,7 @@ module Sidekiq
 
       def test_passing_corral_through_exempt_queue_job
         exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
-        TestCorral.reinstall(exempt_queue)
+        reinstall_middleware(exempt_queue)
 
         DummyJob.set(corral: :critical).perform_async
 
