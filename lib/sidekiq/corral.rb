@@ -9,6 +9,14 @@ module Sidekiq
     class Error < StandardError
     end
 
+    def self.confine(queue)
+      orig_queue = current
+      self.current = queue
+      yield
+    ensure
+      self.current = orig_queue
+    end
+
     def self.current
       Thread.current[:sidekiq_corral_queue]
     end
@@ -41,11 +49,8 @@ module Sidekiq
     class Server
       include Sidekiq::ServerMiddleware
 
-      def call(_worker, job, _queue)
-        Corral.current = job["corral"] if job["corral"]
-        yield
-      ensure
-        Corral.current = nil
+      def call(_worker, job, _queue, &block)
+        job["corral"] ? Corral.confine(job["corral"], &block) : block.call
       end
     end
   end

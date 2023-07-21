@@ -27,6 +27,31 @@ module Sidekiq
       Corral.install
     end
 
+    def test_confine_changes_corral_in_block
+      assert_nil(Corral.current)
+      Corral.confine("inner_corral") { assert_equal("inner_corral", Corral.current) }
+      assert_nil(Corral.current)
+    end
+
+    def test_confine_resets_to_original_value
+      Corral.current = "outer_corral"
+      assert_equal("outer_corral", Corral.current)
+      Corral.confine("inner_corral") { assert_equal("inner_corral", Corral.current) }
+      assert_equal("outer_corral", Corral.current)
+    end
+
+    def test_confine_resets_value_on_error
+      Corral.current = "outer_corral"
+      assert_equal("outer_corral", Corral.current)
+      assert_raises(StandardError) do
+        Corral.confine("inner_corral") do
+          assert_equal("inner_corral", Corral.current)
+          raise(StandardError, "job failure")
+        end
+      end
+      assert_equal("outer_corral", Corral.current)
+    end
+
     class ClientTest < Minitest::Test
       def setup
         @worker_class = DummyWorker
