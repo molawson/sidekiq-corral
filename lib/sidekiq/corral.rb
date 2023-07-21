@@ -6,6 +6,13 @@ module Sidekiq
   module Corral
     class Error < StandardError
     end
-    # Your code goes here...
+
+    def self.current
+      Thread.current[:sidekiq_corral_queue]
+    end
+
+    def self.current=(queue)
+      Thread.current[:sidekiq_corral_queue] = queue
+    end
   end
 end

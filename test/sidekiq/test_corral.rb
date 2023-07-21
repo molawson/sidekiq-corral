@@ -2,12 +2,25 @@
 
 require "test_helper"
 
-class Sidekiq::TestCorral < Minitest::Test
-  def test_that_it_has_a_version_number
-    refute_nil ::Sidekiq::Corral::VERSION
-  end
+module Sidekiq
+  class TestCorral < Minitest::Test
+    class DummyWorker
+      def perform(one_id, another_id, message)
+      end
+    end
 
-  def test_it_does_something_useful
-    assert false
+    def teardown
+      Corral.current = nil
+    end
+
+    def test_that_version_number
+      refute_nil ::Sidekiq::Corral::VERSION
+    end
+
+    def test_current
+      assert_nil(Corral.current)
+      Corral.current = "my_corral"
+      assert_equal("my_corral", Corral.current)
+    end
   end
 end
