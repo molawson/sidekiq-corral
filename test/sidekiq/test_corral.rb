@@ -90,6 +90,38 @@ module Sidekiq
         assert_nil(@job["corral"])
         assert_equal("low", @job["queue"])
       end
+
+      def test_exempt_queue
+        exempt_queue = "special_queue"
+
+        assert_nil(@job["corral"])
+
+        @job["corral"] = "critical"
+        @job["queue"] = exempt_queue
+
+        Sidekiq::Corral::Client
+          .new(exempt_queue)
+          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
+
+        assert_equal("critical", @job["corral"])
+        assert_equal(exempt_queue, @job["queue"])
+      end
+
+      def test_multiple_exempt_queues
+        exempt_queue = "special_queue"
+
+        assert_nil(@job["corral"])
+
+        @job["corral"] = "critical"
+        @job["queue"] = exempt_queue
+
+        Sidekiq::Corral::Client
+          .new(["another_special_queue", exempt_queue])
+          .call(@worker_class, @job, @job["queue"], @redis_pool) { "next_step" }
+
+        assert_equal("critical", @job["corral"])
+        assert_equal(exempt_queue, @job["queue"])
+      end
     end
 
     class ServerTest < Minitest::Test
