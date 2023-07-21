@@ -6,19 +6,8 @@ require_relative "../support/dummy_jobs"
 
 module Sidekiq
   class TestCorral < Minitest::Test
-    def teardown
-      Corral.current = nil
-    end
-
     def test_that_version_number
       refute_nil ::Sidekiq::Corral::VERSION
-    end
-
-    def test_current
-      assert_nil(Corral.current)
-      Corral.current = "my_corral"
-
-      assert_equal("my_corral", Corral.current)
     end
 
     def test_confine_changes_corral_in_block
@@ -28,25 +17,24 @@ module Sidekiq
     end
 
     def test_confine_resets_to_original_value
-      Corral.current = "outer_corral"
-
-      assert_equal("outer_corral", Corral.current)
-      Corral.confine("inner_corral") { assert_equal("inner_corral", Corral.current) }
-      assert_equal("outer_corral", Corral.current)
+      Corral.confine("outer_corral") do
+        assert_equal("outer_corral", Corral.current)
+        Corral.confine("inner_corral") { assert_equal("inner_corral", Corral.current) }
+        assert_equal("outer_corral", Corral.current)
+      end
     end
 
     def test_confine_resets_value_on_error
-      Corral.current = "outer_corral"
-
-      assert_equal("outer_corral", Corral.current)
-      assert_raises(StandardError) do
-        Corral.confine("inner_corral") do
-          assert_equal("inner_corral", Corral.current)
-          raise(StandardError, "job failure")
+      Corral.confine("outer_corral") do
+        assert_equal("outer_corral", Corral.current)
+        assert_raises(StandardError) do
+          Corral.confine("inner_corral") do
+            assert_equal("inner_corral", Corral.current)
+            raise(StandardError, "job failure")
+          end
         end
+        assert_equal("outer_corral", Corral.current)
       end
-
-      assert_equal("outer_corral", Corral.current)
     end
 
     class ClientTest < Minitest::Test
@@ -59,14 +47,10 @@ module Sidekiq
       def teardown
         Sidekiq::Job.clear_all
         uninstall_middleware
-        Corral.current = nil
       end
 
       def test_updating_queue_and_job_corral_with_current_corral
-        Corral.current = "critical"
-
-        assert_equal(0, DummyJob.jobs.size)
-        DummyJob.perform_async
+        Corral.confine("critical") { DummyJob.perform_async }
 
         assert_equal(1, DummyJob.jobs.size)
         job = DummyJob.jobs.first
@@ -76,9 +60,6 @@ module Sidekiq
       end
 
       def test_updating_queue_with_corral_in_job_payload
-        assert_nil(Corral.current)
-
-        assert_equal(0, DummyJob.jobs.size)
         DummyJob.set(corral: :critical).perform_async
 
         assert_equal(1, DummyJob.jobs.size)
@@ -89,7 +70,6 @@ module Sidekiq
       end
 
       def test_no_corral
-        assert_equal(0, DummyJob.jobs.size)
         DummyJob.perform_async
 
         assert_equal(1, DummyJob.jobs.size)
@@ -100,7 +80,6 @@ module Sidekiq
       end
 
       def test_explicit_nil_corral
-        assert_equal(0, DummyJob.jobs.size)
         DummyJob.set(corral: nil).perform_async
 
         assert_equal(1, DummyJob.jobs.size)
@@ -148,7 +127,6 @@ module Sidekiq
       def teardown
         Sidekiq::Job.clear_all
         uninstall_middleware
-        Corral.current = nil
       end
 
       def test_passing_corral_to_sub_job

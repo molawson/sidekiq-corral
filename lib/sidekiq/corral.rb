@@ -9,30 +9,34 @@ module Sidekiq
     class Error < StandardError
     end
 
-    def self.confine(queue)
-      orig_queue = current
-      self.current = queue
-      yield
-    ensure
-      self.current = orig_queue
-    end
-
-    def self.current
-      Thread.current[:sidekiq_corral_queue]
-    end
-
-    def self.current=(queue)
-      Thread.current[:sidekiq_corral_queue] = queue
-    end
-
-    def self.install(exempt_queues = [])
-      Sidekiq.configure_client do |config|
-        config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, exempt_queues) }
+    class << self
+      def confine(queue)
+        orig_queue = current
+        self.current = queue
+        yield
+      ensure
+        self.current = orig_queue
       end
 
-      Sidekiq.configure_server do |config|
-        config.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
-        config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, exempt_queues) }
+      def current
+        Thread.current[:sidekiq_corral_queue]
+      end
+
+      def install(exempt_queues = [])
+        Sidekiq.configure_client do |config|
+          config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, exempt_queues) }
+        end
+
+        Sidekiq.configure_server do |config|
+          config.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
+          config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, exempt_queues) }
+        end
+      end
+
+      private
+
+      def current=(queue)
+        Thread.current[:sidekiq_corral_queue] = queue
       end
     end
 
