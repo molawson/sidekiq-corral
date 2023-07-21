@@ -17,6 +17,17 @@ module Sidekiq
       Thread.current[:sidekiq_corral_queue] = queue
     end
 
+    def self.install
+      Sidekiq.configure_client do |config|
+        config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client) }
+      end
+
+      Sidekiq.configure_server do |config|
+        config.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
+        config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client) }
+      end
+    end
+
     class Client
       include Sidekiq::ClientMiddleware
 

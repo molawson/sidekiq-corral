@@ -23,6 +23,10 @@ module Sidekiq
       assert_equal("my_corral", Corral.current)
     end
 
+    def test_install
+      Corral.install
+    end
+
     class ClientTest < Minitest::Test
       def setup
         @worker_class = DummyWorker
