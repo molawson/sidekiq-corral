@@ -22,14 +22,14 @@ module Sidekiq
         Thread.current[:sidekiq_corral_queue]
       end
 
-      def install(exempt_queues = [])
+      def install(opts = {})
         Sidekiq.configure_client do |config|
-          config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, exempt_queues) }
+          config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, opts) }
         end
 
         Sidekiq.configure_server do |config|
           config.server_middleware { |chain| chain.add(Sidekiq::Corral::Server) }
-          config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, exempt_queues) }
+          config.client_middleware { |chain| chain.add(Sidekiq::Corral::Client, opts) }
         end
       end
 
@@ -43,8 +43,9 @@ module Sidekiq
     class Client
       include Sidekiq::ClientMiddleware
 
-      def initialize(exempt_queues = [])
-        @exempt_queues = Array(exempt_queues).map(&:to_s)
+      def initialize(opts)
+        opts = opts.transform_keys(&:to_s)
+        @exempt_queues = Array(opts["exempt_queues"]).map(&:to_s)
       end
 
       def call(_worker_class, job, _queue, _redis_pool)

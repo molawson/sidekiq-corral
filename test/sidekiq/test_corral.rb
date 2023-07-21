@@ -91,7 +91,7 @@ module Sidekiq
 
       def test_exempt_queue
         exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
-        reinstall_middleware(exempt_queue)
+        reinstall_middleware(exempt_queues: exempt_queue)
 
         DummySpecialJob.set(corral: :critical).perform_async
 
@@ -104,7 +104,7 @@ module Sidekiq
 
       def test_multiple_exempt_queues
         exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
-        reinstall_middleware(["extra_special", exempt_queue])
+        reinstall_middleware(exempt_queues: ["extra_special", exempt_queue])
 
         DummySpecialJob.set(corral: :critical).perform_async
 
@@ -144,7 +144,7 @@ module Sidekiq
 
       def test_passing_corral_through_exempt_queue_job
         exempt_queue = DummySpecialJob.get_sidekiq_options["queue"].to_s
-        reinstall_middleware(exempt_queue)
+        reinstall_middleware(exempt_queues: exempt_queue)
 
         DummyJob.set(corral: :critical).perform_async
 

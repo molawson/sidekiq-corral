@@ -12,12 +12,12 @@ module MiddlewareSetup
     end
   end
 
-  def reinstall_middleware(exempt_queues = [])
+  def reinstall_middleware(opts = {})
     uninstall_middleware
-    install_middleware(exempt_queues)
+    install_middleware(opts)
   end
 
-  def install_middleware(exempt_queues = [])
-    Sidekiq::Corral.install(exempt_queues)
+  def install_middleware(opts = {})
+    Sidekiq::Corral.install(opts)
   end
 end
