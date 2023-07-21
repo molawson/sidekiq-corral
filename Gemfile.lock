@@ -2,11 +2,13 @@ PATH
   remote: .
   specs:
     sidekiq-corral (0.1.0)
+      sidekiq (~> 6.0)
 
 GEM
   remote: https://rubygems.org/
   specs:
     ast (2.4.2)
+    connection_pool (2.4.1)
     json (2.6.3)
     minitest (5.18.1)
     minitest-color (0.0.2)
@@ -15,8 +17,10 @@ GEM
     parser (3.2.2.1)
       ast (~> 2.4.1)
     prettier_print (1.2.1)
+    rack (2.2.7)
     rainbow (3.1.1)
     rake (13.0.6)
+    redis (4.8.1)
     regexp_parser (2.8.0)
     rexml (3.2.5)
     rubocop (1.42.0)
@@ -32,6 +36,10 @@ GEM
     rubocop-ast (1.28.1)
       parser (>= 3.2.1.0)
     ruby-progressbar (1.13.0)
+    sidekiq (6.5.9)
+      connection_pool (>= 2.2.5, < 3)
+      rack (~> 2.0)
+      redis (>= 4.5.0, < 5)
     syntax_tree (6.1.1)
       prettier_print (>= 1.2.0)
     unicode-display_width (2.4.2)
