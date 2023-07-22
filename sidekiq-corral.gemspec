@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description = "Send a job to a queue and move all jobs it triggers to that same queue."
   spec.homepage = "https://github.com/molawson/sidekiq-corral"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 2.6.0"
+  spec.required_ruby_version = ">= 2.7.0"
 
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata["rubygems_mfa_required"] = "true"
