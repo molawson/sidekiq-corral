@@ -12,4 +12,8 @@ end
 require "rubocop/rake_task"
 RuboCop::RakeTask.new
 
+require "syntax_tree/rake_tasks"
+SyntaxTree::Rake::CheckTask.new
+SyntaxTree::Rake::WriteTask.new
+
 task default: %i[test]
