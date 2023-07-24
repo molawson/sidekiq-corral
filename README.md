@@ -60,7 +60,7 @@ All jobs enqueued within that block (including those enqueued in `ClassThatEnque
 
 Sometimes a queue is special enough that you always want jobs destined for it to _always_ be processed there, regardless of Sidekiq::Corral's concerns. You can name those queues on setup:
 
-```ruby
+```ruby
 Sidekiq::Corral.install(exempt_queues: ["notifications"])
 ```
 
@@ -101,7 +101,7 @@ Enqueuing the NormalJob with a corral would get processed like so:
 ```ruby
 NormalJob.set(corral: "backfill").perform_async
 
-NormalJob               # queue: "backfill".      corral: "backfill"
+NormalJob               # queue: "backfill"       corral: "backfill"
 -> SpecialJob           # queue: "notifications"  corral: "backfill"
    -> AnotherNormalJob  # queue: "backfill"       corral: "backfill"
 ```
